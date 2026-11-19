@@ -6,7 +6,7 @@ PY ?= python3
 COMPOSE := docker compose -f docker-compose.yml -f docker-compose.models.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help env models example check config up up-core down restart restart-portal ps logs logs-model test doctor psql
+.PHONY: help env models example check config up up-core down restart restart-portal ldapcheck denied ps logs logs-model test doctor psql
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,13 @@ restart: ## Перезапустить портал и LiteLLM (после пр�
 
 restart-portal: ## Перезапустить только портал (после правки config/access.yaml)
 	$(COMPOSE) restart portal
+
+ldapcheck: ## Проверить вход и группы: make ldapcheck USER=ivanov
+	@test -n "$(USER)" || (echo 'Укажите USER=<логин>'; exit 1)
+	docker compose exec -it portal python -m app.ldapcheck "$(USER)"
+
+denied: ## Кто не смог войти и с какими группами (из логов портала)
+	@docker compose logs --tail=200 portal | grep "event=login.denied" || echo "Отказов не было"
 
 ps: ## Статус контейнеров
 	$(COMPOSE) ps

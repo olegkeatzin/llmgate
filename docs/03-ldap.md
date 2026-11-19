@@ -124,7 +124,12 @@ LDAP_GROUP_FILTER=(&(objectClass=posixGroup)(memberUid={username}))
 bind сервисной учёткой → поиск → bind пользователем → группы → роль.
 
 ```bash
+make ldapcheck USER=ivanov
+# или напрямую:
 docker compose exec -it portal python -m app.ldapcheck ivanov
+
+# кто получил отказ и с какими группами
+make denied
 ```
 
 Пример вывода:
