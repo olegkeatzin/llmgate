@@ -184,6 +184,17 @@ def test_login_is_throttled(env) -> None:
     assert "Слишком много" in blocked.text
 
 
+def test_open_redirect_is_blocked(env) -> None:
+    client, _ = env
+    response = client.post(
+        "/login",
+        data={"username": "ivanov", "password": "pass", "next": "//evil.example/phish"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+
+
 def test_tampered_cookie_is_rejected(env) -> None:
     client, _ = env
     login(client)
