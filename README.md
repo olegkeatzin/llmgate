@@ -186,7 +186,7 @@ config/
   litellm.settings.yaml  # статические настройки LiteLLM
   litellm.generated.yaml # СГЕНЕРИРОВАН: model_list + fallbacks
   models.generated.json  # СГЕНЕРИРОВАН: каталог для портала
-portal/                  # LDAP-вход и выдача ключей (~700 строк)
+portal/                  # LDAP-вход и выдача ключей (~1 700 строк Python)
 tools/
   llmgate.py             # реестр → compose + конфиг LiteLLM
   gen_secrets.py         # .env со случайными секретами
