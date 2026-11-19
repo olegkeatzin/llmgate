@@ -349,20 +349,21 @@ spec:
 
 ## Выключить или удалить модель
 
+Полная процедура — [00-setup.md, §6.2](00-setup.md#62-удалить-модель). Коротко:
+
 ```bash
-# выключить: убрать из LiteLLM и compose
-$EDITOR models/qwen3-8b/model.yaml   # enabled: false
-make models && make up
+# 1. убрать ссылки: config/router.yaml (fallbacks) и config/access.yaml (models)
+# 2. enabled: false (мягко) или rm -rf models/<имя> (жёстко)
+make models
+make up          # контейнер удалённой модели уйдёт как orphan
+make restart
 
-# удалить контейнер выключенной модели
-docker compose rm -sf sglang-qwen3-8b
-
-# освободить диск (осторожно: веса общие для всех моделей!)
-du -sh data/hf-cache
+# 3. при необходимости почистить веса
+du -sh data/hf-cache/hub/models--org--name
 ```
 
-Удаление модели из LiteLLM означает для клиентов `400 model not found` — предупредите
-пользователей и проверьте, что модель не указана резервом в `config/router.yaml`.
+Удаление из LiteLLM — это `400 model not found` для клиентов; предупредите их.
+Выключение безопаснее: описание остаётся, вернуть модель — одна строка.
 
 ## Шпаргалка: во что превращается YAML
 

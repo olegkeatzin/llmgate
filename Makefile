@@ -34,7 +34,7 @@ config: ## Проверить синтаксис compose-файлов
 	$(COMPOSE) config -q && echo 'OK: compose валиден'
 
 up: .env models ## Поднять весь стек: модели SGLang + LiteLLM + портал
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --remove-orphans
 	@echo "Готово. Порты портала и API — PORTAL_PORT и LITELLM_PORT в .env"
 
 up-core: .env ## Поднять только LiteLLM + портал (без моделей)
