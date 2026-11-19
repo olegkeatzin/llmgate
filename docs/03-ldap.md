@@ -44,6 +44,49 @@ LDAP_NESTED_GROUPS=true
   сотрудник получит роль, если состоит во вложенной группе. Дороже по времени,
   поэтому по умолчанию выключено.
 
+## AD: UPN, кириллица и база внутри OU
+
+Если сотрудники входят по UPN (`ivanov@corp.local`), логины содержат кириллицу,
+а корень домена отдаёт referrals:
+
+```dotenv
+LDAP_URI=ldap://dc01.corp.local:389
+LDAP_START_TLS=true
+# Пока сертификат контроллера самоподписанный/просрочен — шифруем, но не проверяем.
+LDAP_TLS_VERIFY=false
+
+LDAP_BIND_DN=svc-llmgate@corp.local
+LDAP_BIND_PASSWORD=<пароль сервисной учётки>
+
+# Важно: конкретное OU, где лежат люди и группы, а не DC=corp,DC=local.
+LDAP_USER_BASE=OU=Company,DC=corp,DC=local
+LDAP_USER_FILTER=(&(objectClass=person)(|(sAMAccountName={username})(userPrincipalName={username})))
+LDAP_GROUP_BASE=OU=Company,DC=corp,DC=local
+```
+
+Почему фильтр с `|`: сотрудник может ввести и короткий логин, и полный UPN — портал
+проверит оба атрибута. Дописывать `@corp.local` вручную не нужно: если ввели UPN,
+сработает `userPrincipalName`, если короткий логин — `sAMAccountName`.
+
+**База поиска — OU, а не корень домена.** От корня AD отдаёт referrals на
+`CN=Configuration` и DNS-зоны, клиент падает с `Operations error`. Указывайте OU,
+внутри которого лежат и пользователи, и группы.
+
+Кириллица: `sAMAccountName` и `userPrincipalName` допускают Unicode. Портал
+экранирует значение фильтра и отправляет его в UTF-8, поэтому `Лысенко_ОД`
+и `Лысенко_ОД@corp.local` ищутся одинаково.
+
+Проверка (до входа в браузер):
+
+```bash
+docker compose run --rm --no-deps portal python -m app.ldapcheck "Иванов_ИИ"
+docker compose run --rm --no-deps portal python -m app.ldapcheck "Иванов_ИИ@corp.local"
+```
+
+Если `memberOf` у пользователя пустой (частая ситуация при нестандартной схеме),
+группы найдутся вторым запросом по `LDAP_GROUP_FILTER` — для этого и нужен
+`LDAP_GROUP_BASE`.
+
 ## Пример для OpenLDAP
 
 ```dotenv
