@@ -264,8 +264,11 @@ HTTP 4xx (например `context_length_exceeded`) резервом **не** 
 ### Как проверить резерв за две минуты
 
 ```bash
-# 1. Включить вторую модель и перегенерировать
-#    models/qwen3-8b/model.yaml: enabled: true, gpus: "1", mem_fraction_static: 0.45
+# 1. Освободить место под резерв — один из вариантов:
+#    a) внешний сервер: models/llm2-qwen3-32b/model.yaml -> enabled: true
+#    b) две модели на двух картах (только 80 ГБ):
+#       qwen3-32b: tensor_parallel 1, gpus "0", context_length 16384
+#       qwen3-8b:  enabled true, gpus "1", mem_fraction_static 0.60
 make models && make up && make restart
 make ps                                  # оба sglang-* healthy
 

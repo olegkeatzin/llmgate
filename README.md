@@ -61,8 +61,9 @@ LDAP-вход в ключ. Почему так — в [ADR 0001](docs/adr/0001-t
 
 ## Быстрый старт
 
-Предполагается Linux-сервер с Docker, Compose v2 и nvidia-container-toolkit
-(подробно — [docs/05-operations.md](docs/05-operations.md)).
+Полный гайд от чистого сервера (драйвер → .env → LDAP → модель → ключ):
+**[docs/00-setup.md](docs/00-setup.md)**. Ниже — сокращённая версия для сервера,
+где Docker и nvidia-container-toolkit уже стоят.
 
 ```bash
 git clone <репозиторий> llmgate && cd llmgate
@@ -201,6 +202,7 @@ docs/                    # документация
 
 | Документ | О чём |
 |---|---|
+| [00-setup.md](docs/00-setup.md) | **установка с нуля**: драйвер, .env, LDAP, модель, первый ключ |
 | [01-architecture.md](docs/01-architecture.md) | компоненты, потоки данных, кто чем владеет |
 | [02-models.md](docs/02-models.md) | добавление моделей, 2×A100, офлайн, резервы |
 | [03-ldap.md](docs/03-ldap.md) | настройка AD/OpenLDAP, группы, диагностика |
