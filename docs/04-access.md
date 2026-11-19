@@ -12,18 +12,18 @@ defaults:
   key_ttl_hours: 24      # значение по умолчанию для ролей без своего срока
 
 policies:
-  - id: engineer          # слаг, не меняется после появления в git-истории
-    name: Разработчик     # как называется в интерфейсе
-    ldap_groups: ["LLM-Engineers"]
-    models: ["qwen3-32b", "qwen3-8b", "bge-m3"]
+  - id: users             # слаг, не меняется после появления в git-истории
+    name: Пользователь    # как называется в интерфейсе
+    ldap_groups: ["LLM-Users"]
+    models: ["*"]         # или явный список: ["qwen3-32b", "bge-m3"]
     key_ttl_hours: 24
     max_active_keys: 2
-    rpm_limit: 120
-    tpm_limit: 200000
+    rpm_limit: 60
+    tpm_limit: 100000
     max_parallel_requests: 8
 
 overrides:                 # логин → id роли, перекрывает группы
-  ivanov: admin
+  ivanov: admins
 ```
 
 ## Как выбирается роль

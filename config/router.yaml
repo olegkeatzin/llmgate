@@ -2,10 +2,8 @@
 #
 # Это ровно блок "router_settings" из конфигурации LiteLLM — тот же формат,
 # что в документации: https://docs.litellm.ai/docs/routing
-# Генератор добавляет сюда только проверку имён: если модель не найдена в
-# models/*/model.yaml или выключена, он скажет об этом при make models.
-#
-# Меняйте этот файл напрямую, затем: make models && make restart
+# Генератор проверяет только имена: если модель не найдена в models/*/model.yaml
+# или выключена, он скажет об этом при make models.
 
 routing_strategy: simple-shuffle
 num_retries: 2          # повторы к той же модели до перехода на резерв
@@ -16,8 +14,11 @@ retry_after: 5
 
 # Резервные каналы: "модель": [что пробовать дальше, по порядку].
 # Срабатывает на 5xx, таймаут и ошибку соединения. 4xx резервом не лечится.
-fallbacks:
-  - qwen3-32b: [qwen3-8b, llm2-qwen3-32b]
+#
+# Пример:
+# fallbacks:
+#   - main-model: [backup-model, remote-model]
+fallbacks: []
 
 # «Последняя надежда» для моделей без своей цепочки. Пусто — не использовать.
 default_fallbacks: []

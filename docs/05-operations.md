@@ -28,11 +28,12 @@ cd /opt/llmgate
 make env                 # .env со случайными секретами
 $EDITOR .env             # LDAP_*, PUBLIC_API_BASE_URL
 make doctor              # проверит docker, GPU, .env
+make example NAME=qwen3-32b   # реестр пуст: копируем пример (или создаём свою модель)
 make up
 make ps                  # ждём healthy у sglang-qwen3-32b (5–20 мин)
 ```
 
-Если модели ещё не скачаны, первый `make up` займёт время: SGLang тянет ~65 ГБ
+Если модели ещё не скачаны, первый `make up` займёт время: SGLang тянет веса
 в `data/hf-cache`. Прогресс — `make logs-model MODEL=qwen3-32b`.
 
 ## TLS и reverse proxy

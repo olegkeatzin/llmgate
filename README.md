@@ -72,13 +72,16 @@ make env                      # создаёт .env со случайными с
 
 $EDITOR .env                  # заполните LDAP_* и PUBLIC_API_BASE_URL
 
-make up                       # соберёт портал, поднимет БД, LiteLLM и qwen3-32b
+# Реестр моделей пуст — выберите свою. Пример под 2×A100:
+make example NAME=qwen3-32b
 
-make ps                       # ждём, пока sglang-qwen3-32b станет healthy
+make up                       # соберёт портал, поднимет БД, LiteLLM и модель
+
+make ps                       # ждём healthy у контейнера sglang-<ваша-модель>
 ```
 
-Первый запуск SGLang качает веса Qwen3-32B (~65 ГБ) в `data/hf-cache` и грузит их
-на GPU — это 5–20 минут в зависимости от канала. Прогресс:
+Первый запуск SGLang качает веса вашей модели в `data/hf-cache` и грузит их
+на GPU — это 5–20 минут в зависимости от размера и канала. Прогресс:
 
 ```bash
 make logs-model MODEL=qwen3-32b
@@ -128,6 +131,9 @@ make models                                # compose + конфиг LiteLLM + к
 make up                                    # поднять
 ```
 
+Или взять готовый пример: `make example NAME=qwen3-32b` (список — `ls examples/models`).
+Примеры **не загружаются**, пока вы их не скопируете в `models/`.
+
 Полное описание полей, раскладок на 2×A100 и офлайн-загрузки весов —
 [docs/02-models.md](docs/02-models.md).
 
@@ -139,13 +145,13 @@ make up                                    # поднять
 
 ```yaml
 policies:
-  - id: engineer
-    ldap_groups: ["LLM-Engineers"]
-    models: ["qwen3-32b", "qwen3-8b", "bge-m3"]
+  - id: users
+    ldap_groups: ["LLM-Users"]
+    models: ["*"]              # или явный список: ["qwen3-32b"]
     key_ttl_hours: 24
     max_active_keys: 2
-    rpm_limit: 120
-    tpm_limit: 200000
+    rpm_limit: 60
+    tpm_limit: 100000
     max_parallel_requests: 8
 ```
 
@@ -177,17 +183,17 @@ LiteLLM сначала повторит запрос (`num_retries: 2`), пот�
 ## Структура репозитория
 
 ```
-models/                  # реестр моделей: по каталогу на модель
-  qwen3-32b/model.yaml   #   основная, tp=2 на двух A100
-  qwen3-8b/model.yaml    #   лёгкая (выключена)
-  bge-m3/model.yaml      #   эмбеддинги (выключена)
+models/                  # ВАШИ модели (пусто, пока не добавите)
+  README.md              #   формат и примеры
+examples/models/         # готовые примеры — НЕ загружаются автоматически
+  qwen3-32b/  qwen3-8b/  bge-m3/  llm2-qwen3-32b/
 config/
   access.yaml            # LDAP-группы → роли, модели, лимиты
   llmgate.yaml           # образ SGLang по умолчанию, кэш весов
   router.yaml            # резервы и параметры роутера (формат LiteLLM)
   litellm.settings.yaml  # статические настройки LiteLLM
-  litellm.generated.yaml # СГЕНЕРИРОВАН: model_list + router_settings
-  models.generated.json  # СГЕНЕРИРОВАН: каталог для портала
+  litellm.generated.yaml # СГЕНЕРИРОВАН (в git не хранится)
+  models.generated.json  # СГЕНЕРИРОВАН (в git не хранится)
 portal/                  # LDAP-вход и выдача ключей (~1 700 строк Python)
 tools/
   llmgate.py             # реестр → compose + конфиг LiteLLM

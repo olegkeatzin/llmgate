@@ -16,7 +16,8 @@
 git clone <адрес> llmgate && cd llmgate     # или из bundle, см. §2
 make env                                    # .env со случайными секретами
 $EDITOR .env                                # LDAP_* и PUBLIC_API_BASE_URL
-make up                                     # БД + LiteLLM + портал + qwen3-32b
+make example NAME=qwen3-32b                 # реестр пуст: берём пример (или свою модель)
+make up                                     # БД + LiteLLM + портал + модель
 make ps                                     # ждать healthy у sglang-qwen3-32b
 ```
 
@@ -164,7 +165,8 @@ docker compose exec -it portal python -m app.ldapcheck ivanov
 | 1 GPU 24 ГБ | `qwen3-8b` | 1 | `"0"` | 0.85 | 16384 |
 | 1 GPU 12 ГБ | AWQ 7–8B | 1 | `"0"` | 0.90 | 8192 |
 
-Раскладка по умолчанию (2×A100 80 ГБ) уже готова — можно сразу к 5.3.
+Пример ¤qwen3-32b¤ рассчитан на 2×A100 80 ГБ. Скопируйте его в реестр:
+¤make example NAME=qwen3-32b¤ — и можно сразу к 5.3.
 
 ### 5.2 Поправить `models/<имя>/model.yaml`
 
@@ -300,8 +302,8 @@ spec:
 ```yaml
 # config/access.yaml
 policies:
-  - id: engineer
-    models: ["qwen3-32b", "qwen3-8b", "qwen2.5-72b"]   # добавили новую
+  - id: users
+    models: ["qwen3-32b", "qwen2.5-72b"]   # добавили новую
 ```
 
 ```bash

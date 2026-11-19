@@ -1,6 +1,6 @@
 # Кому что доступно — единственный источник правды для портала.
 #
-# Роль (policy) — это блок ниже. Портал при входе сопоставляет LDAP-группы
+# Роль (policy) — блок ниже. Портал при входе сопоставляет LDAP-группы
 # сотрудника с ролями и выпускает ключ ровно с этими правами.
 #
 # Правила:
@@ -8,13 +8,13 @@
 #   * ldap_groups: "*" — подходит всем, кто успешно вошёл в LDAP.
 #   * models: имена из каталога (models/*/model.yaml) или "*" — все включённые.
 #     Выключенные модели игнорируются: ключ не даст доступа к неработающей модели.
-#   * key_ttl_hours — срок жизни ключа. Требование «по умолчанию сутки» = 24.
+#   * key_ttl_hours — срок жизни ключа (требование «по умолчанию сутки» = 24).
 #   * max_active_keys — сколько действующих ключей можно иметь одновременно.
 #   * rpm_limit / tpm_limit / max_parallel_requests — лимиты LiteLLM на ключ.
 #     Пустое значение = без лимита.
 #   * budget_usd — денежный лимит на ключ (работает, если у моделей заданы цены).
 #
-# После правки: make restart-portal  (данные в Git — можно ревьюить и откатывать).
+# После правки: make restart-portal
 
 schema: 1
 
@@ -22,27 +22,19 @@ defaults:
   key_ttl_hours: 24
 
 policies:
-  - id: viewer
+  - id: users
     name: Пользователь
     ldap_groups: ["LLM-Users"]
-    models: ["qwen3-32b"]
-    key_ttl_hours: 24
-    max_active_keys: 1
-    rpm_limit: 30
-    tpm_limit: 30000
-    max_parallel_requests: 4
-
-  - id: engineer
-    name: Разработчик
-    ldap_groups: ["LLM-Engineers"]
-    models: ["qwen3-32b", "qwen3-8b", "bge-m3"]
+    # "*" — все включённые модели. Для ограничения перечислите имена явно:
+    # models: ["qwen3-32b"]
+    models: ["*"]
     key_ttl_hours: 24
     max_active_keys: 2
-    rpm_limit: 120
-    tpm_limit: 200000
+    rpm_limit: 60
+    tpm_limit: 100000
     max_parallel_requests: 8
 
-  - id: admin
+  - id: admins
     name: Администратор
     ldap_groups: ["LLM-Admins"]
     models: ["*"]
@@ -53,5 +45,5 @@ policies:
 
 # Ручные исключения: логин -> id роли. Перекрывает группы.
 # overrides:
-#   ivanov: admin
+#   ivanov: admins
 overrides: {}

@@ -6,7 +6,7 @@ PY ?= python3
 COMPOSE := docker compose -f docker-compose.yml -f docker-compose.models.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help env models check config up up-core down restart restart-portal ps logs logs-model test doctor psql
+.PHONY: help env models example check config up up-core down restart restart-portal ps logs logs-model test doctor psql
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -19,6 +19,12 @@ env: ## Сгенерировать .env со случайными секрета
 
 models: ## Перегенерировать docker-compose.models.yml и config/litellm.generated.yaml
 	$(PY) tools/llmgate.py render
+
+example: ## Скопировать пример модели в реестр: make example NAME=qwen3-32b
+	@test -n "$(NAME)" || (echo 'Укажите NAME. Доступные примеры:'; ls examples/models; exit 1)
+	@test ! -d "models/$(NAME)" || (echo "models/$(NAME) уже существует — удалите или выберите другое имя"; exit 1)
+	cp -r "examples/models/$(NAME)" "models/$(NAME)"
+	@echo "Скопировано в models/$(NAME). Дальше: make models && make up"
 
 check: ## Проверить реестр моделей и актуальность сгенерированных файлов
 	$(PY) tools/llmgate.py validate

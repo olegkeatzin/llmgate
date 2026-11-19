@@ -18,12 +18,12 @@ def policies() -> PolicySet:
 
 
 def test_resolve_by_group(policies: PolicySet) -> None:
-    policy = policies.resolve("ivanov", ["llm-engineers"])
-    assert policy is not None and policy.id == "engineer"
+    policy = policies.resolve("ivanov", ["llm-users"])
+    assert policy is not None and policy.id == "users"
 
 
 def test_resolve_is_case_insensitive(policies: PolicySet) -> None:
-    assert policies.resolve("ivanov", ["CN=LLM-ADMINS,OU=Groups"]).id == "admin"
+    assert policies.resolve("ivanov", ["CN=LLM-ADMINS,OU=Groups"]).id == "admins"
 
 
 def test_unknown_groups_deny(policies: PolicySet) -> None:
@@ -47,7 +47,7 @@ def test_override_wins_over_groups() -> None:
     path = ROOT / "tests" / "_tmp_override.yaml"
     path.write_text(
         "policies:\n"
-        "  - id: viewer\n    ldap_groups: ['llm-users']\n    models: ['m']\n"
+        "  - id: base\n    ldap_groups: ['llm-users']\n    models: ['m']\n"
         "  - id: admin\n    ldap_groups: ['llm-admins']\n    models: ['*']\n"
         "overrides:\n  ivanov: admin\n",
         encoding="utf-8",
@@ -70,19 +70,19 @@ def test_invalid_policies_raise() -> None:
 
 
 def test_key_payload_contains_limits(policies: PolicySet) -> None:
-    policy = policies.get("engineer")
+    policy = policies.get("users")
     payload = build_key_payload(
         username="ivanov",
-        groups=["llm-engineers"],
+        groups=["llm-users"],
         policy=policy,
-        served_models=["qwen3-32b", "bge-m3"],
+        served_models=["my-model", "my-embedding"],
         key_alias="jupyter",
     )
     assert payload["duration"] == "24h"
-    assert payload["models"] == ["qwen3-32b", "bge-m3"]
+    assert payload["models"] == ["my-model", "my-embedding"]
     assert payload["user_id"] == "ivanov"
-    assert payload["rpm_limit"] == 120
-    assert payload["metadata"]["portal_policy"] == "engineer"
+    assert payload["rpm_limit"] == 60
+    assert payload["metadata"]["portal_policy"] == "users"
 
 
 def test_key_payload_requires_models(policies: PolicySet) -> None:
@@ -90,7 +90,7 @@ def test_key_payload_requires_models(policies: PolicySet) -> None:
         build_key_payload(
             username="ivanov",
             groups=[],
-            policy=policies.get("viewer"),
+            policy=policies.get("users"),
             served_models=[],
             key_alias="x",
         )

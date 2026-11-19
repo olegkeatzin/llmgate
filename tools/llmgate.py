@@ -36,6 +36,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = ROOT / "models"
+EXAMPLES_DIR = ROOT / "examples" / "models"
 CONFIG_DIR = ROOT / "config"
 COMPOSE_OUT = ROOT / "docker-compose.models.yml"
 LITELLM_OUT = CONFIG_DIR / "litellm.generated.yaml"
@@ -366,7 +367,10 @@ def validate(models: list[Model], router: dict[str, Any] | None = None) -> tuple
             published[port] = m.name
 
     if not any(m.enabled for m in models):
-        errors.append("нет ни одной включённой модели (enabled: true)")
+        errors.append(
+            "нет ни одной включённой модели: добавьте models/<имя>/model.yaml "
+            "(см. models/README.md) или скопируйте пример из examples/models"
+        )
 
     return errors, warnings
 
@@ -647,6 +651,8 @@ def cmd_list(_: argparse.Namespace) -> int:
     models = load_registry()
     if not models:
         print("Реестр пуст: создайте models/<имя>/model.yaml")
+        print("  python3 tools/llmgate.py add my-model --hf-repo org/model")
+        print("  или: cp -r examples/models/qwen3-32b models/")
         return 0
     chains = fallback_map(load_router_config())
     fmt = "{:<18} {:<16} {:<9} {:<6} {:<8} {:<24} {}"
@@ -712,6 +718,11 @@ def _render_all() -> dict[Path, str]:
 
 
 def cmd_render(args: argparse.Namespace) -> int:
+    if not load_registry():
+        print("Реестр моделей пуст — генерировать нечего.", file=sys.stderr)
+        print("  Добавьте модель:      python3 tools/llmgate.py add my-model --hf-repo org/model", file=sys.stderr)
+        print("  Или скопируйте пример: cp -r examples/models/qwen3-32b models/", file=sys.stderr)
+        return 1
     try:
         rendered = _render_all()
     except RegistryError as exc:
@@ -800,6 +811,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     )
     print(f"Создан {target.relative_to(ROOT)}")
     print("Дальше: отредактируйте файл, затем выполните  make models  и  make up")
+    print("Готовые примеры: ls examples/models")
     return 0
 
 
@@ -808,6 +820,8 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     settings = load_registry_settings()
     models = load_registry()
     print(f"Реестр: {len(models)} моделей, включено {sum(1 for m in models if m.enabled)}")
+    if not models:
+        print("  Реестр пуст — добавьте модель или скопируйте пример из examples/models")
     print(f"Образ SGLang по умолчанию: {settings.get('image')}")
 
     env_file = ROOT / ".env"

@@ -1,4 +1,8 @@
-"""Тесты реестра моделей, резервных каналов и генератора конфигурации."""
+"""Тесты реестра, резервных каналов и генератора.
+
+По умолчанию реестр пуст — проверяем это, а рабочие сценарии гоняем
+на примерах из examples/models, которые в деплой не попадают.
+"""
 
 from __future__ import annotations
 
@@ -11,52 +15,56 @@ import yaml
 import llmgate
 
 ROOT = Path(__file__).resolve().parents[1]
+EXAMPLES = ROOT / "examples" / "models"
 
 
-def enabled_models() -> list[llmgate.Model]:
-    models = llmgate.load_registry()
+def example_models() -> list[llmgate.Model]:
+    return llmgate.load_registry(EXAMPLES)
+
+
+def enabled_examples() -> list[llmgate.Model]:
+    models = example_models()
     for model in models:
         model.enabled = True
     return models
 
 
-def test_repository_registry_is_valid() -> None:
-    models = llmgate.load_registry()
-    errors, _warnings = llmgate.validate(models, llmgate.load_router_config())
+def test_registry_is_empty_by_default() -> None:
+    assert llmgate.load_registry() == []
+
+
+def test_render_fails_with_clear_error_on_empty_registry() -> None:
+    with pytest.raises(llmgate.RegistryError):
+        llmgate._render_all()
+
+
+def test_examples_are_valid() -> None:
+    errors, _warnings = llmgate.validate(example_models(), llmgate.load_router_config())
     assert errors == []
-    assert {"qwen3-32b", "qwen3-8b", "bge-m3", "llm2-qwen3-32b"} <= {m.name for m in models}
+    assert {"qwen3-32b", "qwen3-8b", "bge-m3", "llm2-qwen3-32b"} <= {m.name for m in example_models()}
 
 
-def test_generated_files_are_up_to_date() -> None:
-    for path, content in llmgate._render_all().items():
-        assert path.read_text(encoding="utf-8") == content, f"устарел {path}"
-
-
-def test_models_do_not_declare_fallbacks() -> None:
+def test_no_fallbacks_inside_model_files() -> None:
     """Резервы живут только в config/router.yaml — один источник правды."""
-    for path in sorted((ROOT / "models").glob("*/model.yaml")):
-        spec = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("spec") or {}
-        assert "fallbacks" not in spec, f"{path}: резервы должны быть в router.yaml"
+    for folder in (ROOT / "models", EXAMPLES):
+        for path in sorted(folder.glob("*/model.yaml")):
+            spec = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("spec") or {}
+            assert "fallbacks" not in spec, f"{path}: резервы должны быть в router.yaml"
 
 
-def test_compose_contains_service_and_gpu_reservation() -> None:
-    models = llmgate.load_registry()
-    compose = yaml.safe_load(llmgate.render_compose(models, llmgate.load_registry_settings()))
+def test_compose_from_examples() -> None:
+    compose = yaml.safe_load(
+        llmgate.render_compose(example_models(), llmgate.load_registry_settings())
+    )
     service = compose["services"]["sglang-qwen3-32b"]
     assert service["image"].startswith("lmsysorg/sglang:")
     assert service["command"][service["command"].index("--tp") + 1] == "2"
     assert service["deploy"]["resources"]["reservations"]["devices"][0]["device_ids"] == ["0", "1"]
-
-
-def test_disabled_models_are_not_in_compose() -> None:
-    models = llmgate.load_registry()
-    compose = yaml.safe_load(llmgate.render_compose(models, llmgate.load_registry_settings()))
     assert "sglang-qwen3-8b" not in compose["services"]
 
 
-def test_litellm_has_alias_and_env_key() -> None:
-    models = llmgate.load_registry()
-    doc = yaml.safe_load(llmgate.render_litellm(models, llmgate.load_router_config(), {}))
+def test_litellm_from_examples() -> None:
+    doc = yaml.safe_load(llmgate.render_litellm(example_models(), llmgate.load_router_config(), {}))
     names = [entry["model_name"] for entry in doc["model_list"]]
     assert "qwen3-32b" in names and "qwen3" in names
     entry = next(e for e in doc["model_list"] if e["model_name"] == "qwen3-32b")
@@ -66,7 +74,7 @@ def test_litellm_has_alias_and_env_key() -> None:
 
 def test_router_settings_are_copied_from_native_file() -> None:
     doc = yaml.safe_load(
-        llmgate.render_litellm(llmgate.load_registry(), llmgate.load_router_config(), {})
+        llmgate.render_litellm(example_models(), llmgate.load_router_config(), {})
     )
     router = doc["router_settings"]
     assert router["num_retries"] == 2
@@ -75,26 +83,24 @@ def test_router_settings_are_copied_from_native_file() -> None:
 
 
 def test_fallbacks_render_in_litellm_format() -> None:
-    models = enabled_models()
-    doc = yaml.safe_load(llmgate.render_litellm(models, llmgate.load_router_config(), {}))
-    assert doc["router_settings"]["fallbacks"] == [
-        {"qwen3-32b": ["qwen3-8b", "qwen3-32b-remote"]}
-    ]
+    router = llmgate.load_router_config() | {"fallbacks": [{"qwen3-32b": ["qwen3-8b"]}]}
+    doc = yaml.safe_load(llmgate.render_litellm(enabled_examples(), router, {}))
+    assert {"qwen3-32b": ["qwen3-8b"]} in doc["router_settings"]["fallbacks"]
 
 
 def test_fallback_accepts_registry_name_and_renders_api_name() -> None:
-    models = llmgate.load_registry()
+    models = example_models()
     for model in models:
         if model.kind == "RemoteModel":
             model.enabled = True
-    router = {"fallbacks": [{"qwen3-32b": ["llm2-qwen3-32b"]}]}
-    doc = yaml.safe_load(llmgate.render_litellm(models, llmgate.load_router_config() | router, {}))
+    router = llmgate.load_router_config() | {"fallbacks": [{"qwen3-32b": ["llm2-qwen3-32b"]}]}
+    doc = yaml.safe_load(llmgate.render_litellm(models, router, {}))
     assert doc["router_settings"]["fallbacks"] == [{"qwen3-32b": ["qwen3-32b-remote"]}]
 
 
 def test_disabled_fallback_is_skipped_with_warning(capsys: pytest.CaptureFixture[str]) -> None:
-    models = llmgate.load_registry()
-    doc = yaml.safe_load(llmgate.render_litellm(models, llmgate.load_router_config(), {}))
+    router = llmgate.load_router_config() | {"fallbacks": [{"qwen3-32b": ["qwen3-8b"]}]}
+    doc = yaml.safe_load(llmgate.render_litellm(example_models(), router, {}))
     assert "fallbacks" not in doc["router_settings"]
     assert "выключен и пропущен" in capsys.readouterr().err
 
@@ -132,7 +138,6 @@ def test_minimal_model_file_works() -> None:
         assert model.served_name == "minimal"
         assert model.enabled is True
         assert model.context_length == 32768
-        assert model.sglang.get("tensor_parallel") is None
         args = llmgate._sglang_args(model)
         assert args[args.index("--tp") + 1] == "1"
     finally:
@@ -140,9 +145,8 @@ def test_minimal_model_file_works() -> None:
         target.parent.rmdir()
 
 
-def test_catalog_json_is_valid() -> None:
-    payload = json.loads((ROOT / "config" / "models.generated.json").read_text(encoding="utf-8"))
+def test_catalog_from_examples() -> None:
+    payload = json.loads(llmgate.render_catalog(example_models(), {}))
     assert payload["schema"] == 1
-    by_name = {m["name"]: m for m in payload["models"]}
-    assert "qwen3-32b" in by_name
-    assert by_name["qwen3-32b"]["fallbacks"] == ["qwen3-8b", "llm2-qwen3-32b"]
+    names = {m["name"] for m in payload["models"]}
+    assert {"qwen3-32b", "qwen3-8b", "bge-m3", "llm2-qwen3-32b"} == names

@@ -15,6 +15,8 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
+import llmgate
+
 from app.catalog import ModelCatalog
 from app.ldap_auth import InvalidCredentials, LdapIdentity
 from app.main import create_app
@@ -56,7 +58,7 @@ def make_settings(**overrides) -> Settings:
 
 class FakeLdap:
     users = {
-        "ivanov": {"password": "pass", "name": "Иван Иванов", "groups": ["llm-engineers"]},
+        "ivanov": {"password": "pass", "name": "Иван Иванов", "groups": ["llm-users"]},
         "petrov": {"password": "pass", "name": "Пётр Петров", "groups": ["llm-users"]},
         "norole": {"password": "pass", "name": "Без Роли", "groups": ["unknown-group"]},
     }
@@ -112,8 +114,14 @@ class FakeLiteLLM:
 
 
 @pytest.fixture()
-def env():
-    settings = make_settings()
+def env(tmp_path):
+    catalog_path = tmp_path / "models.json"
+    examples = llmgate.load_registry(ROOT / "examples" / "models")
+    catalog_path.write_text(
+        llmgate.render_catalog(examples, llmgate.fallback_map(llmgate.load_router_config())),
+        encoding="utf-8",
+    )
+    settings = make_settings(catalog_path=catalog_path)
     fake_litellm = FakeLiteLLM()
     application = create_app(
         settings,
@@ -157,7 +165,7 @@ def test_login_success_sets_cookie(env) -> None:
     page = client.get("/")
     assert page.status_code == 200
     assert "Ключ доступа" in page.text
-    assert "Разработчик" in page.text
+    assert "Пользователь" in page.text
 
 
 def test_login_wrong_password(env) -> None:
@@ -223,12 +231,12 @@ def test_create_key_returns_secret_once(env) -> None:
 
 def test_key_limit_is_enforced(env) -> None:
     client, _ = env
-    login(client, username="petrov")  # политика viewer: max_active_keys = 1
-    first = client.post("/keys", data={"_csrf": csrf(client)})
-    assert first.status_code == 201
-    second = client.post("/keys", data={"_csrf": csrf(client)})
-    assert second.status_code == 409
-    assert "лимит" in second.text
+    login(client, username="petrov")  # политика users: max_active_keys = 2
+    assert client.post("/keys", data={"_csrf": csrf(client)}).status_code == 201
+    assert client.post("/keys", data={"_csrf": csrf(client)}).status_code == 201
+    third = client.post("/keys", data={"_csrf": csrf(client)})
+    assert third.status_code == 409
+    assert "лимит" in third.text
 
 
 def test_csrf_is_required(env) -> None:
