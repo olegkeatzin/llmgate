@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  {% include "_head.html" %}
+  <title>{{ app_name }} — вход</title>
+</head>
+<body class="auth">
+<main class="auth-card">
+  <div class="brand brand-center">
+    <span class="brand-mark">L</span><span>LLMGate</span>
+  </div>
+  <h1>Вход в LLM-сервис</h1>
+  <p class="muted">Учётная запись предприятия (LDAP / Active Directory).</p>
+
+  {% set msg = flash(request) %}
+  {% if msg %}<div class="alert {{ 'ok' if msg[0] == 'ok' else 'err' }}">{{ msg[1] }}</div>{% endif %}
+  {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/login" class="auth-form">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div class="field">
+      <label for="username">Логин</label>
+      <input id="username" class="input" name="username" value="{{ username }}" autocomplete="username" autofocus required maxlength="128">
+    </div>
+    <div class="field">
+      <label for="password">Пароль</label>
+      <input id="password" class="input" type="password" name="password" autocomplete="current-password" required maxlength="1024">
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Войти</button>
+  </form>
+
+  <p class="small muted auth-foot">
+    После входа вы получите API-ключ для доступа к моделям. Пароль вводится только в LDAP и не сохраняется.
+  </p>
+</main>
+</body>
+</html>

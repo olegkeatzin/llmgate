@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  {% include "_head.html" %}
+  <title>{{ app_name }} — ключ доступа</title>
+</head>
+<body class="app">
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="/"><span class="brand-mark">L</span><span>LLMGate</span></a>
+
+    <div class="side-user">
+      <div class="avatar">{{ (user.display_name or user.username)[:1]|upper }}</div>
+      <div class="side-user-text">
+        <div class="name">{{ user.display_name or user.username }}</div>
+        <div class="muted small">{{ policy.name }}</div>
+      </div>
+    </div>
+
+    <nav class="side-nav" aria-label="Разделы">
+      <a class="active" href="/" aria-current="page">Мой ключ</a>
+      <a href="#connect">Подключение</a>
+      <a href="#models">Модели</a>
+    </nav>
+
+    <form method="post" action="/logout" class="side-logout">
+      <button type="submit" class="btn btn-ghost btn-block">Выйти</button>
+    </form>
+    <div class="side-foot">v{{ version }}</div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div>
+        <h1>Ключ доступа</h1>
+        <p class="muted">Вход через LDAP подтверждён. Ключ выпускается на {{ policy.key_ttl_hours|duration }}.</p>
+      </div>
+      <span class="badge ok">Активно {{ active_count }} / {{ policy.max_active_keys }}</span>
+    </header>
+
+    {% set msg = flash(request) %}
+    {% if msg %}<div class="alert {{ 'ok' if msg[0] == 'ok' else 'err' }}">{{ msg[1] }}</div>{% endif %}
+    {% if error %}<div class="alert err">{{ error }}</div>{% endif %}
+    {% if keys_error %}<div class="alert warn">Не удалось получить список ключей из LiteLLM: {{ keys_error }}</div>{% endif %}
+
+    {% if revealed %}
+    <section class="card reveal" id="revealed">
+      <div class="reveal-head">
+        <span class="badge ok">Ключ создан</span>
+        <span class="muted small">{{ revealed.alias }}</span>
+      </div>
+      <h2>Скопируйте ключ сейчас</h2>
+      <p class="muted">Портал не хранит значение ключа: повторно показать его не получится. Если потеряете — отзовите и выпустите новый.</p>
+      <div class="copy-row">
+        <input id="revealed-key" class="input mono" readonly value="{{ revealed.key }}" aria-label="Новый API-ключ">
+        <button type="button" class="btn btn-primary" data-copy="#revealed-key">Копировать</button>
+      </div>
+      <p class="small muted">Действует до {{ revealed.expires_at|dt }}.</p>
+    </section>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Выпуск ключа</h2>
+          <p class="muted small">Ключ привязан к вашей учётной записи и роли. Лимиты задаёт администратор.</p>
+        </div>
+      </div>
+
+      {% if active_count >= policy.max_active_keys %}
+        <p class="muted">Достигнут лимит действующих ключей. Отзовите один из ключей в таблице ниже, чтобы выпустить новый.</p>
+      {% else %}
+        <form method="post" action="/keys" class="key-form">
+          <input type="hidden" name="_csrf" value="{{ user.csrf }}">
+          <div class="field">
+            <label for="alias">Название ключа <span class="muted">(необязательно)</span></label>
+            <input id="alias" class="input" name="alias" maxlength="60" placeholder="например, jupyter или chatbot" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-primary">Получить ключ на {{ policy.key_ttl_hours|duration }}</button>
+        </form>
+      {% endif %}
+
+      <dl class="stats">
+        <div><dt>Срок ключа</dt><dd>{{ policy.key_ttl_hours|duration }}</dd></div>
+        <div><dt>Ключей одновременно</dt><dd>{{ policy.max_active_keys }}</dd></div>
+        <div><dt>Запросов в минуту</dt><dd>{{ policy.rpm_limit or "без лимита" }}</dd></div>
+        <div><dt>Токенов в минуту</dt><dd>{{ policy.tpm_limit or "без лимита" }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Мои ключи</h2>
+        <span class="muted small">Данные из LiteLLM Proxy</span>
+      </div>
+      {% if keys %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Название</th>
+              <th>Модели</th>
+              <th>Создан</th>
+              <th>Действует до</th>
+              <th>Расход</th>
+              <th>Статус</th>
+              <th><span class="sr-only">Действия</span></th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for k in keys %}
+            <tr class="{{ 'row-muted' if not k.is_active }}">
+              <td class="strong">{{ k.alias }}</td>
+              <td class="small">{{ k.models|join(", ") if k.models else "—" }}</td>
+              <td class="small muted">{{ k.created_at|dt }}</td>
+              <td class="small">{{ k.expires_at|dt if k.expires_at else "бессрочно" }}</td>
+              <td class="small">{{ k.spend|money }}</td>
+              <td>
+                {% if k.status == "active" %}<span class="badge ok">действует</span>
+                {% elif k.status == "expired" %}<span class="badge muted">истёк</span>
+                {% else %}<span class="badge err">отозван</span>{% endif %}
+              </td>
+              <td class="right">
+                {% if k.status == "active" %}
+                <form method="post" action="/keys/{{ k.token }}/revoke" data-confirm="Отозвать ключ «{{ k.alias }}»? Приложения с ним перестанут работать.">
+                  <input type="hidden" name="_csrf" value="{{ user.csrf }}">
+                  <button type="submit" class="btn btn-sm btn-danger">Отозвать</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="empty">Ключей пока нет. Выпустите первый ключ выше.</p>
+      {% endif %}
+    </section>
+
+    <section class="card" id="connect">
+      <h2>Подключение</h2>
+      <p class="muted">API совместим с OpenAI. Базовый адрес и ключ подставьте в свой клиент.</p>
+
+      <div class="field">
+        <label for="api-base">Базовый адрес</label>
+        <input id="api-base" class="input mono" readonly value="{{ api_base }}">
+      </div>
+
+      <h3>curl</h3>
+      <pre><code>curl {{ api_base }}/chat/completions \
+  -H "Authorization: Bearer $LLM_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ first_model }}", "messages": [{"role": "user", "content": "Привет"}]}'</code></pre>
+
+      <h3>Python</h3>
+      <pre><code>from openai import OpenAI
+
+client = OpenAI(base_url="{{ api_base }}", api_key="sk-...")
+answer = client.chat.completions.create(
+    model="{{ first_model }}",
+    messages=[{"role": "user", "content": "Привет"}],
+)
+print(answer.choices[0].message.content)</code></pre>
+
+      <p class="small muted">Ключ действует {{ policy.key_ttl_hours|duration }}. Продление — выпуск нового ключа; старый отзовите.</p>
+    </section>
+
+    <section class="card" id="models">
+      <div class="card-head">
+        <h2>Доступные модели</h2>
+        <span class="muted small">{{ models|length }} в вашей роли</span>
+      </div>
+      {% if models %}
+      <ul class="model-list">
+        {% for m in models %}
+        <li>
+          <div class="model-name">
+            <span class="strong">{{ m.title }}</span>
+            <span class="mono small muted">{{ m.served_name }}</span>
+          </div>
+          <div class="model-meta">
+            <span class="badge">{{ m.capabilities|join(" / ") }}</span>
+            <span class="small muted">контекст {{ m.context_length|num if m.context_length else "—" }}</span>
+            {% if m.fallbacks %}<span class="small muted">резерв: {{ m.fallbacks|join(" → ") }}</span>{% endif %}
+            {% if not m.enabled %}<span class="badge muted">выключена</span>{% endif %}
+          </div>
+          {% if m.description %}<p class="small muted model-desc">{{ m.description }}</p>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+        <p class="empty">Для вашей роли нет включённых моделей.</p>
+      {% endif %}
+    </section>
+
+    <footer class="foot">
+      <span>Ключи, лимиты и аналитика — в LiteLLM Proxy. Роли и доступ — в <span class="mono">config/access.yaml</span>.</span>
+    </footer>
+  </main>
+</div>
+<script src="/static/app.js" defer></script>
+</body>
+</html>
