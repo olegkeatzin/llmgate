@@ -1,0 +1,30 @@
+# Статические настройки LiteLLM Proxy.
+# tools/llmgate.py вставляет этот файл в config/litellm.generated.yaml
+# (секции general_settings / litellm_settings), добавляя к нему model_list
+# и router_settings, собранные из models/*/model.yaml.
+#
+# ВАЖНО: значение os.environ/XXX подставляется LiteLLM из окружения контейнера.
+# Пароли и ключи здесь не хранятся — только ссылки на .env.
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  # Модели, добавленные через API/UI LiteLLM, попадают в БД.
+  store_model_in_db: true
+  # Журнал расходов (нужен для лимитов, аналитики и страницы «Использование»).
+  disable_spend_logs: false
+  # Приватность: тексты промптов в БД НЕ пишутся.
+  store_prompts_in_spend_logs: false
+  # Пакетная запись логов расходов — меньше нагрузки на PostgreSQL.
+  proxy_batch_write_at: 30
+  # Запрещаем клиентам видеть внутренние ошибки.
+  disable_error_logs: false
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 600
+  set_verbose: false
+  json_logs: true
+  # Включает /metrics (Prometheus). Требует пакет prometheus_client в образе;
+  # если метрики не нужны — закомментируйте строку ниже.
+  # callbacks: ["prometheus"]

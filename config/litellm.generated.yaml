@@ -1,0 +1,49 @@
+# ВНИМАНИЕ: файл сгенерирован tools/llmgate.py.
+# Не редактируйте вручную: измените models/<имя>/model.yaml
+# и выполните: make models
+model_list:
+- model_name: qwen3-32b
+  litellm_params:
+    model: openai/qwen3-32b
+    api_base: http://sglang-qwen3-32b:30000/v1
+    api_key: os.environ/SGLANG_API_KEY
+  model_info:
+    mode: chat
+    max_input_tokens: 32768
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+    max_output_tokens: 8192
+    supports_function_calling: true
+- model_name: qwen3
+  litellm_params:
+    model: openai/qwen3-32b
+    api_base: http://sglang-qwen3-32b:30000/v1
+    api_key: os.environ/SGLANG_API_KEY
+  model_info:
+    mode: chat
+    max_input_tokens: 32768
+    input_cost_per_token: 0.0
+    output_cost_per_token: 0.0
+    max_output_tokens: 8192
+    supports_function_calling: true
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 600
+  allowed_fails: 3
+  cooldown_time: 45
+  retry_after: 5
+  disable_cooldowns: false
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  disable_spend_logs: false
+  store_prompts_in_spend_logs: false
+  proxy_batch_write_at: 30
+  disable_error_logs: false
+litellm_settings:
+  drop_params: true
+  request_timeout: 600
+  set_verbose: false
+  json_logs: true

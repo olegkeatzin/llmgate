@@ -1,0 +1,34 @@
+# Шаблон локальной модели (не читается генератором: имя начинается с "_").
+# Скопируйте в models/<имя>/model.yaml и поправьте поля.
+apiVersion: llmgate/v1
+kind: SGLangModel
+
+metadata:
+  name: my-model
+  title: Моя модель
+  description: Для чего нужна и кому.
+  tags: [chat]
+
+spec:
+  enabled: true
+  served_name: my-model
+  aliases: []
+  context_length: 32768
+  max_output_tokens: 8192
+  capabilities: [chat]
+  fallbacks: []
+  pricing:
+    input_per_1m_usd: 0
+    output_per_1m_usd: 0
+
+  sglang:
+    hf_repo: org/model-name
+    revision: main
+    tensor_parallel: 1
+    gpus: "0"
+    mem_fraction_static: 0.85
+    dtype: bfloat16
+    shm_size: 32g
+    enable_metrics: true
+    startup_timeout_s: 1800
+    extra_args: []

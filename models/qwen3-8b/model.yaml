@@ -1,0 +1,41 @@
+# Быстрая модель. По умолчанию выключена: на двух A100 одновременно
+# с qwen3-32b (tp=2) она не помещается.
+#
+# Когда включать:
+#   * вторая машина/свободная GPU — поставьте enabled: true и нужный gpus;
+#   * лёгкий стенд вместо флагмана — выключите qwen3-32b;
+#   * резерв для qwen3-32b — только если у модели есть свободная VRAM.
+apiVersion: llmgate/v1
+kind: SGLangModel
+
+metadata:
+  name: qwen3-8b
+  title: Qwen3 8B
+  description: >
+    Быстрая модель для чатов, черновиков, классификации и простых вопросов.
+    Дешёвая по VRAM, хороший кандидат для резервного канала.
+  tags: [chat, fast, ru, en]
+
+spec:
+  enabled: false
+  served_name: qwen3-8b
+  aliases: []
+  context_length: 32768
+  max_output_tokens: 8192
+  capabilities: [chat]
+  fallbacks: []
+  pricing:
+    input_per_1m_usd: 0
+    output_per_1m_usd: 0
+
+  sglang:
+    hf_repo: Qwen/Qwen3-8B
+    revision: main
+    tensor_parallel: 1
+    gpus: "1"
+    mem_fraction_static: 0.45
+    dtype: bfloat16
+    shm_size: 16g
+    enable_metrics: true
+    startup_timeout_s: 1200
+    extra_args: []

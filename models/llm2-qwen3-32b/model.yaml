@@ -1,0 +1,42 @@
+# Пример резервного канала на ДРУГОМ сервере (kind: RemoteModel).
+#
+# Контейнер для такой модели не создаётся: LiteLLM ходит по сети на чужой
+# OpenAI-совместимый эндпоинт. Так можно:
+#   * пережить падение своего GPU-хоста;
+#   * использовать внешний шлюз (vLLM, второй SGLang, облачный провайдер);
+#   * подмешать более мощную модель для редких тяжёлых запросов.
+#
+# Включение:
+#   1) spec.enabled: true
+#   2) spec.remote.base_url — адрес, доступный ИЗ КОНТЕЙНЕРА litellm
+#   3) ключ доступа положите в .env под именем из api_key_env
+#   4) make models && make restart
+apiVersion: llmgate/v1
+kind: RemoteModel
+
+metadata:
+  name: llm2-qwen3-32b
+  title: Qwen3 32B на llm2.corp.local
+  description: >
+    Резервный внешний эндпоинт. Пока выключен — это заготовка,
+    которую достаточно включить и указать реальный адрес.
+  tags: [chat, fallback, remote]
+
+spec:
+  enabled: false
+  served_name: qwen3-32b-remote
+  aliases: []
+  context_length: 32768
+  max_output_tokens: 8192
+  capabilities: [chat]
+  fallbacks: []
+  pricing:
+    input_per_1m_usd: 0
+    output_per_1m_usd: 0
+
+  remote:
+    base_url: http://llm2.corp.local:30000/v1
+    # Префикс провайдера LiteLLM: openai/ — любой OpenAI-совместимый сервер.
+    upstream_model: openai/qwen3-32b
+    api_key_env: REMOTE_LLM_API_KEY
+    timeout_s: 600

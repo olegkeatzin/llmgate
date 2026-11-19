@@ -1,0 +1,36 @@
+# Эмбеддинги для RAG: BAAI/bge-m3 (многоязычная, 1024 измерения).
+# SGLang поднимает её в режиме --is-embedding и отдаёт POST /v1/embeddings.
+# По умолчанию выключена: занимает отдельную GPU.
+apiVersion: llmgate/v1
+kind: SGLangModel
+
+metadata:
+  name: bge-m3
+  title: BGE-M3 (embeddings)
+  description: >
+    Векторные представления текста для поиска по базе знаний,
+    RAG и семантической кластеризации. Русский и английский языки.
+  tags: [embedding, rag, ru, en]
+
+spec:
+  enabled: false
+  served_name: bge-m3
+  aliases: []
+  context_length: 8192
+  max_output_tokens: 1
+  capabilities: [embedding]
+  fallbacks: []
+  pricing:
+    input_per_1m_usd: 0
+    output_per_1m_usd: 0
+
+  sglang:
+    hf_repo: BAAI/bge-m3
+    revision: main
+    tensor_parallel: 1
+    gpus: "1"
+    mem_fraction_static: 0.2
+    dtype: float16
+    shm_size: 8g
+    startup_timeout_s: 900
+    extra_args: []

@@ -1,0 +1,27 @@
+# Шаблон внешней модели (не читается генератором: имя начинается с "_").
+apiVersion: llmgate/v1
+kind: RemoteModel
+
+metadata:
+  name: my-remote-model
+  title: Внешний эндпоинт
+  description: Другой сервер или облачный провайдер.
+  tags: [chat, remote]
+
+spec:
+  enabled: false
+  served_name: my-remote-model
+  aliases: []
+  context_length: 32768
+  max_output_tokens: 8192
+  capabilities: [chat]
+  fallbacks: []
+  pricing:
+    input_per_1m_usd: 0
+    output_per_1m_usd: 0
+
+  remote:
+    base_url: https://api.example.com/v1
+    upstream_model: openai/my-model
+    api_key_env: REMOTE_LLM_API_KEY
+    timeout_s: 600

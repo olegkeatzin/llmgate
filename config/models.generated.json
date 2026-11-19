@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "name": "bge-m3",
+      "served_name": "bge-m3",
+      "aliases": [],
+      "title": "BGE-M3 (embeddings)",
+      "description": "Векторные представления текста для поиска по базе знаний, RAG и семантической кластеризации. Русский и английский языки.",
+      "kind": "SGLangModel",
+      "enabled": false,
+      "capabilities": [
+        "embedding"
+      ],
+      "context_length": 8192,
+      "max_output_tokens": 1,
+      "tags": [
+        "embedding",
+        "rag",
+        "ru",
+        "en"
+      ],
+      "fallbacks": [],
+      "pricing": {
+        "input_per_1m_usd": 0.0,
+        "output_per_1m_usd": 0.0
+      },
+      "source": "models\\bge-m3\\model.yaml"
+    },
+    {
+      "name": "llm2-qwen3-32b",
+      "served_name": "qwen3-32b-remote",
+      "aliases": [],
+      "title": "Qwen3 32B на llm2.corp.local",
+      "description": "Резервный внешний эндпоинт. Пока выключен — это заготовка, которую достаточно включить и указать реальный адрес.",
+      "kind": "RemoteModel",
+      "enabled": false,
+      "capabilities": [
+        "chat"
+      ],
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tags": [
+        "chat",
+        "fallback",
+        "remote"
+      ],
+      "fallbacks": [],
+      "pricing": {
+        "input_per_1m_usd": 0.0,
+        "output_per_1m_usd": 0.0
+      },
+      "source": "models\\llm2-qwen3-32b\\model.yaml"
+    },
+    {
+      "name": "qwen3-32b",
+      "served_name": "qwen3-32b",
+      "aliases": [
+        "qwen3"
+      ],
+      "title": "Qwen3 32B",
+      "description": "Флагманская модель для сложных задач: код, анализ документов, длинные инструкции, русский и английский языки.",
+      "kind": "SGLangModel",
+      "enabled": true,
+      "capabilities": [
+        "chat"
+      ],
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tags": [
+        "chat",
+        "reasoning",
+        "ru",
+        "en"
+      ],
+      "fallbacks": [
+        "qwen3-8b",
+        "llm2-qwen3-32b"
+      ],
+      "pricing": {
+        "input_per_1m_usd": 0.0,
+        "output_per_1m_usd": 0.0
+      },
+      "source": "models\\qwen3-32b\\model.yaml"
+    },
+    {
+      "name": "qwen3-8b",
+      "served_name": "qwen3-8b",
+      "aliases": [],
+      "title": "Qwen3 8B",
+      "description": "Быстрая модель для чатов, черновиков, классификации и простых вопросов. Дешёвая по VRAM, хороший кандидат для резервного канала.",
+      "kind": "SGLangModel",
+      "enabled": false,
+      "capabilities": [
+        "chat"
+      ],
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tags": [
+        "chat",
+        "fast",
+        "ru",
+        "en"
+      ],
+      "fallbacks": [],
+      "pricing": {
+        "input_per_1m_usd": 0.0,
+        "output_per_1m_usd": 0.0
+      },
+      "source": "models\\qwen3-8b\\model.yaml"
+    }
+  ]
+}
