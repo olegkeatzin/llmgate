@@ -63,7 +63,8 @@ LiteLLM обращается к модели по имени сервиса: `ht
 | Ключи, их лимиты, бюджеты | LiteLLM | PostgreSQL |
 | Журнал расходов | LiteLLM | PostgreSQL, `LiteLLM_SpendLogs` |
 | Роли и доступ к моделям | Git + портал | `config/access.yaml` |
-| Реестр моделей и резервы | Git | `models/*/model.yaml` |
+| Реестр моделей | Git | `models/*/model.yaml` |
+| Резервные цепочки | Git | `config/router.yaml` (формат LiteLLM) |
 | Сессия сотрудника | Портал | cookie (шифр Fernet) |
 | Веса моделей | SGLang | `data/hf-cache` |
 

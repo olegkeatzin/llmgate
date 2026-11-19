@@ -19,7 +19,6 @@ spec:
   context_length: 8192
   max_output_tokens: 1
   capabilities: [embedding]
-  fallbacks: []
   pricing:
     input_per_1m_usd: 0
     output_per_1m_usd: 0

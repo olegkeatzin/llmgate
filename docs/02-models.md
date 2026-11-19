@@ -20,11 +20,39 @@ models/
 | Файл | Что внутри | Кто читает |
 |---|---|---|
 | `docker-compose.models.yml` | контейнеры SGLang, GPU, порты, healthcheck | Docker Compose |
-| `config/litellm.generated.yaml` | `model_list` + `fallbacks` | LiteLLM |
+| `config/litellm.generated.yaml` | `model_list` (резервы — из `config/router.yaml`) | LiteLLM |
 | `config/models.generated.json` | каталог для интерфейса портала | портал |
 
 **Сгенерированные файлы руками не правят** — их перезапишет следующая `make models`.
 Проверка «не разъехались ли файлы с реестром»: `make check` (это же стоит гонять в CI).
+
+## Почему на модель — отдельный контейнер
+
+Один процесс `sglang.launch_server` обслуживает ровно одну модель: веса лежат в VRAM,
+и второй набор туда не влезет. Арифметика для двух A100 80 ГБ:
+
+- Qwen3-32B в bf16 — ~65 ГБ весов; при `tp=2` это ~33 ГБ на карту, остальное — KV-кэш;
+- Qwen3-8B — ~16 ГБ, ей хватает одной карты.
+
+Поэтому «один контейнер SGLang» возможен только если он обслуживает одну модель —
+именно так стенд и устроен по умолчанию: в `docker-compose.models.yml` один сервис
+`sglang-qwen3-32b`. Остальные модели описаны, но выключены (`enabled: false`)
+и не занимают ни VRAM, ни место в compose.
+
+Если моделей несколько, вариантов три:
+
+1. **Контейнер на модель, LiteLLM как роутер** — так сделано здесь. LiteLLM уже
+   маршрутизирует по имени модели, считает лимиты и умеет резервы, поэтому второй
+   роутер не нужен.
+2. **LoRA-адаптеры** — один базовый процесс и несколько «моделей»-адаптеров:
+   `--enable-lora --lora-paths name=repo` (через `extra_args`). Подходит, когда
+   модели — файнтюны одного базового семейства и делят веса.
+3. **SGLang Model Gateway** (`lmsysorg/sgl-model-gateway`, режим `--enable-igw`) —
+   отдельный роутер, куда воркеры регистрируются через `POST /workers` с `model_id`.
+   Умеет PD-дизагрегацию и gRPC, но это ещё один компонент: для 2–4 моделей он
+   дублирует LiteLLM.
+
+Ни один вариант не «складывает» две разные модели в одну VRAM.
 
 ## Поля `model.yaml`
 
@@ -47,7 +75,6 @@ models/
 | `context_length` | `32768` | окно контекста, уходит в `--context-length` |
 | `max_output_tokens` | `8192` | ограничение для `max_tokens` на стороне LiteLLM |
 | `capabilities` | `[chat]` | `chat`, `embedding`, `vision`, `rerank` |
-| `fallbacks` | `[]` | цепочка резерва, см. ниже |
 | `pricing.input_per_1m_usd` | `0` | $ за 1M входных токенов (для бюджетов) |
 | `pricing.output_per_1m_usd` | `0` | $ за 1M выходных токенов |
 
@@ -104,6 +131,17 @@ make logs-model MODEL=qwen2.5-72b
 2. скопировать `models/_template-sglang.yaml` или `_template-remote.yaml` в `models/my-model/model.yaml`
 3. поправить `metadata.name`, `hf_repo`, `tensor_parallel`, `gpus`
 4. `make models && make up`
+
+Минимально достаточно четырёх строк — остальное возьмётся по умолчанию
+(`served_name` = имя каталога, `tp=1`, контекст 32768):
+
+```yaml
+# models/my-model/model.yaml
+kind: SGLangModel
+spec:
+  sglang:
+    hf_repo: org/model
+```
 
 Генератор проверит: уникальность имён и алиасов, существование резервов, циклы в цепочках,
 количество GPU под `tensor_parallel`, конфликты `publish_port`. При ошибке `make models`
@@ -186,16 +224,31 @@ curl -s http://localhost:4000/v1/models \
 
 ## Резервные каналы
 
-Цепочка задаётся в `fallbacks` основной модели:
+Резервы настраиваются в LiteLLM-конфиге, а не в описании модели. Файл
+`config/router.yaml` — это ровно блок `router_settings` из документации LiteLLM;
+генератор подставляет его в `config/litellm.generated.yaml` и проверяет,
+что все модели существуют и включены.
 
 ```yaml
-spec:
-  fallbacks: [qwen3-8b, llm2-qwen3-32b]
+# config/router.yaml
+num_retries: 2
+timeout: 600
+
+fallbacks:
+  - qwen3-32b: [qwen3-8b, llm2-qwen3-32b]
+
+default_fallbacks: []      # для моделей без своей цепочки
 ```
 
-Порядок важен: сначала `qwen3-8b`, потом внешний сервер. LiteLLM сначала повторит
-запрос к той же модели (`num_retries: 2`, `cooldown_time: 45` из `config/llmgate.yaml`),
-и только потом пойдёт по цепочке.
+Порядок в списке — порядок переключения: сначала `qwen3-8b`, потом внешний сервер.
+LiteLLM сначала повторит запрос к той же модели (`num_retries`), и только потом
+пойдёт по цепочке.
+
+В `router.yaml` можно писать любое имя модели — имя каталога, `served_name` или
+алиас. Генератор приведёт его к имени в API (`llm2-qwen3-32b` → `qwen3-32b-remote`)
+и сообщит, если имя не найдено.
+
+Применение правок: `make models && make restart`.
 
 Что считается отказом: ошибка подключения, таймаут (`timeout: 600` с), HTTP 5xx.
 HTTP 4xx (например `context_length_exceeded`) резервом **не** лечится.
@@ -203,7 +256,7 @@ HTTP 4xx (например `context_length_exceeded`) резервом **не** 
 Важно:
 
 - резерв должен быть **включён** (`enabled: true`), иначе генератор исключит его из
-  `model_list` с предупреждением, и клиент получит `model not found`;
+  `model_list` с предупреждением;
 - модель-резерв должна принимать тот же формат запроса (все OpenAI-совместимы);
 - при стриминге резерв срабатывает только до первого токена: если поток уже начался,
   переключение невозможно — клиент увидит обрыв.
@@ -213,7 +266,7 @@ HTTP 4xx (например `context_length_exceeded`) резервом **не** 
 ```bash
 # 1. Включить вторую модель и перегенерировать
 #    models/qwen3-8b/model.yaml: enabled: true, gpus: "1", mem_fraction_static: 0.45
-make models && make up
+make models && make up && make restart
 make ps                                  # оба sglang-* healthy
 
 # 2. Запрос к основной модели
@@ -231,13 +284,8 @@ make logs
 Ожидаемо: запрос всё равно отвечает, в теле ответа `"model": "qwen3-8b"`,
 в логах — `Fallback to qwen3-8b`.
 
-«Последняя надежда» на случай, когда у модели нет своей цепочки:
-
-```yaml
-# config/llmgate.yaml
-router:
-  default_fallbacks: [qwen3-8b]
-```
+«Последняя надежда» — `default_fallbacks` в том же `router.yaml`: подключается,
+когда у вызванной модели нет своей цепочки.
 
 ## Офлайн-контур и предзагрузка весов
 
@@ -305,7 +353,7 @@ du -sh data/hf-cache
 ```
 
 Удаление модели из LiteLLM означает для клиентов `400 model not found` — предупредите
-пользователей и проверьте, что модель не указана в `fallbacks` у других.
+пользователей и проверьте, что модель не указана резервом в `config/router.yaml`.
 
 ## Шпаргалка: во что превращается YAML
 

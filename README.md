@@ -19,7 +19,7 @@
 - **Роли из LDAP-групп** — `config/access.yaml`: группа → модели + лимиты + срок ключа.
   Есть ручные исключения для отдельных логинов.
 - **Резервные каналы** — другая модель на этом же сервере или эндпоинт на другом сервере;
-  настраивается цепочкой в `fallbacks`, проверяется вручную за две минуты.
+  настраивается в `config/router.yaml`, проверяется вручную за две минуты.
 - **Аналитика** — LiteLLM пишет журнал расходов в PostgreSQL и показывает его в UI:
   кто, сколько, по какой модели. Промпты в журнал не попадают.
 
@@ -155,16 +155,16 @@ policies:
 
 ## Резервные каналы
 
-В `models/qwen3-32b/model.yaml`:
+В `config/router.yaml` — это блок `router_settings` LiteLLM в его родном формате:
 
 ```yaml
-spec:
-  fallbacks: [qwen3-8b, llm2-qwen3-32b]
+fallbacks:
+  - qwen3-32b: [qwen3-8b, llm2-qwen3-32b]
 ```
 
 LiteLLM сначала повторит запрос (`num_retries: 2`), потом пойдёт по цепочке.
 `qwen3-8b` — локальная вторая модель, `llm2-qwen3-32b` — пример внешнего эндпоинта
-(`kind: RemoteModel`, без контейнера). Выключенные модели из цепочки исключаются
+(`kind: RemoteModel`, без контейнера). Выключенные цели исключаются из конфига
 с предупреждением при генерации.
 
 Проверка: поднять резерв, остановить основную модель (`docker compose stop sglang-qwen3-32b`)
@@ -182,9 +182,10 @@ models/                  # реестр моделей: по каталогу н
   bge-m3/model.yaml      #   эмбеддинги (выключена)
 config/
   access.yaml            # LDAP-группы → роли, модели, лимиты
-  llmgate.yaml           # образ SGLang, кэш весов, параметры роутера
+  llmgate.yaml           # образ SGLang по умолчанию, кэш весов
+  router.yaml            # резервы и параметры роутера (формат LiteLLM)
   litellm.settings.yaml  # статические настройки LiteLLM
-  litellm.generated.yaml # СГЕНЕРИРОВАН: model_list + fallbacks
+  litellm.generated.yaml # СГЕНЕРИРОВАН: model_list + router_settings
   models.generated.json  # СГЕНЕРИРОВАН: каталог для портала
 portal/                  # LDAP-вход и выдача ключей (~1 700 строк Python)
 tools/

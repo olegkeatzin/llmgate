@@ -33,7 +33,6 @@ router_settings:
   allowed_fails: 3
   cooldown_time: 45
   retry_after: 5
-  disable_cooldowns: false
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   database_url: os.environ/DATABASE_URL

@@ -42,6 +42,7 @@ LITELLM_OUT = CONFIG_DIR / "litellm.generated.yaml"
 CATALOG_OUT = CONFIG_DIR / "models.generated.json"
 REGISTRY_SETTINGS = CONFIG_DIR / "llmgate.yaml"
 LITELLM_SETTINGS = CONFIG_DIR / "litellm.settings.yaml"
+ROUTER_SETTINGS = CONFIG_DIR / "router.yaml"
 
 PROJECT_NAME = "llmgate"
 SERVICE_PREFIX = "sglang-"
@@ -80,7 +81,6 @@ class Model:
     context_length: int = 32768
     max_output_tokens: int = 8192
     capabilities: list[str] = field(default_factory=lambda: ["chat"])
-    fallbacks: list[str] = field(default_factory=list)
     pricing_input: float = 0.0
     pricing_output: float = 0.0
     sglang: dict[str, Any] = field(default_factory=dict)
@@ -160,7 +160,6 @@ def load_model_file(path: Path) -> Model:
         context_length=_as_int(spec.get("context_length"), 32768),
         max_output_tokens=_as_int(spec.get("max_output_tokens"), 8192),
         capabilities=[str(c) for c in (spec.get("capabilities") or ["chat"])],
-        fallbacks=[str(f).strip() for f in (spec.get("fallbacks") or []) if str(f).strip()],
         pricing_input=float(pricing.get("input_per_1m_usd") or 0.0),
         pricing_output=float(pricing.get("output_per_1m_usd") or 0.0),
         sglang=dict(spec.get("sglang") or {}) if kind == "SGLangModel" else {},
@@ -212,21 +211,56 @@ def load_registry_settings(path: Path = REGISTRY_SETTINGS) -> dict[str, Any]:
         "image": "lmsysorg/sglang:v0.5.23-cu130",
         "hf_cache_dir": "./data/hf-cache",
     }
-    router = {
-        "num_retries": 2,
-        "timeout": 600,
-        "allowed_fails": 3,
-        "cooldown_time": 45,
-        "default_fallbacks": [],
-    }
     if not path.exists():
-        return {"defaults": defaults, "router": router}
+        return defaults
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(doc, dict):
         raise RegistryError(f"{path}: ожидался YAML-объект")
-    merged_defaults = {**defaults, **(doc.get("defaults") or {})}
-    merged_router = {**router, **(doc.get("router") or {})}
-    return {"defaults": merged_defaults, "router": merged_router}
+    return {**defaults, **(doc.get("defaults") or {})}
+
+
+ROUTER_DEFAULTS: dict[str, Any] = {
+    "routing_strategy": "simple-shuffle",
+    "num_retries": 2,
+    "timeout": 600,
+    "allowed_fails": 3,
+    "cooldown_time": 45,
+    "retry_after": 5,
+    "fallbacks": [],
+    "default_fallbacks": [],
+}
+
+
+def load_router_config(path: Path = ROUTER_SETTINGS) -> dict[str, Any]:
+    """Читает config/router.yaml — это ровно блок router_settings LiteLLM."""
+    if not path.exists():
+        return dict(ROUTER_DEFAULTS)
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(doc, dict):
+        raise RegistryError(f"{path}: ожидался YAML-объект")
+
+    config = {**ROUTER_DEFAULTS, **doc}
+    raw_fallbacks = config.get("fallbacks") or []
+    if not isinstance(raw_fallbacks, list):
+        raise RegistryError(f"{path}: fallbacks должен быть списком вида \"- model: [резерв]\"")
+    for item in raw_fallbacks:
+        if not isinstance(item, dict) or len(item) != 1:
+            raise RegistryError(f"{path}: каждая запись fallbacks — объект с одной моделью")
+        targets = next(iter(item.values()))
+        if not isinstance(targets, list) or not all(isinstance(t, str) for t in targets):
+            raise RegistryError(f"{path}: резервы должны быть списком имён моделей")
+    if not isinstance(config.get("default_fallbacks"), list):
+        raise RegistryError(f"{path}: default_fallbacks должен быть списком")
+    return config
+
+
+def fallback_map(router: dict[str, Any]) -> dict[str, list[str]]:
+    """{"модель": [резерв1, резерв2]} из нативного формата LiteLLM."""
+    result: dict[str, list[str]] = {}
+    for item in router.get("fallbacks") or []:
+        for source, targets in item.items():
+            result.setdefault(str(source), []).extend(str(t) for t in targets)
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -273,26 +307,39 @@ def validate(models: list[Model], router: dict[str, Any] | None = None) -> tuple
         if m.pricing_input < 0 or m.pricing_output < 0:
             errors.append(f"{m.name}: цены не могут быть отрицательными")
 
-    for m in models:
-        for fb in m.fallbacks:
-            if fb not in owner:
-                errors.append(f"{m.name}: резервная модель {fb!r} не найдена в реестре")
+    # Имя каталога, served_name и алиасы — всё допустимо писать в router.yaml.
+    canonical = {n: m.served_name for m in models for n in m.all_names()}
+
+    fallbacks = fallback_map(router)
+    for source, targets in fallbacks.items():
+        if source not in canonical:
+            errors.append(
+                f"router.yaml: {source!r} не найдена (известные имена: {', '.join(sorted(canonical)[:8])})"
+            )
+            continue
+        for target in targets:
+            if target not in canonical:
+                errors.append(f"router.yaml: {source}: резерв {target!r} не найден в реестре")
                 continue
-            if owner[fb] == m.name:
-                errors.append(f"{m.name}: модель не может быть резервом сама для себя")
+            if canonical[target] == canonical[source]:
+                errors.append(f"router.yaml: {source}: модель не может быть резервом сама для себя")
                 continue
-            if not by_name[owner[fb]].enabled:
+            if not by_name[owner[target]].enabled:
                 warnings.append(
-                    f"{m.name}: резерв {fb!r} выключен (enabled: false) — "
-                    f"включите его или замените на доступный endpoint"
+                    f"router.yaml: {source}: резерв {target!r} выключен (enabled: false) — "
+                    f"будет исключён из LiteLLM"
                 )
 
     for fb in router.get("default_fallbacks") or []:
-        if fb not in owner:
-            errors.append(f"llmgate.yaml: default_fallbacks содержит неизвестную модель {fb!r}")
+        if fb not in canonical:
+            errors.append(f"router.yaml: default_fallbacks содержит неизвестную модель {fb!r}")
 
     # Циклы в цепочках резерва
-    graph = {m.name: [f for f in m.fallbacks if f in owner] for m in models}
+    graph = {
+        canonical[source]: [canonical[t] for t in targets if t in canonical]
+        for source, targets in fallbacks.items()
+        if source in canonical
+    }
     state: dict[str, int] = {}
 
     def visit(node: str, stack: list[str]) -> None:
@@ -521,30 +568,27 @@ def render_litellm(
                 }
             )
 
-    router: dict[str, Any] = {
-        "routing_strategy": "simple-shuffle",
-        "num_retries": _as_int(router_settings.get("num_retries"), 2),
-        "timeout": _as_int(router_settings.get("timeout"), 600),
-        "allowed_fails": _as_int(router_settings.get("allowed_fails"), 3),
-        "cooldown_time": _as_int(router_settings.get("cooldown_time"), 45),
-        "retry_after": 5,
-        "disable_cooldowns": False,
-    }
+    router: dict[str, Any] = dict(router_settings)
+    router.pop("fallbacks", None)
+    router.pop("default_fallbacks", None)
 
     enabled_names = {m.served_name for m in models if m.enabled}
+    canonical = {n: m.served_name for m in models for n in m.all_names()}
     chains: list[dict[str, list[str]]] = []
-    for model in sorted(models, key=lambda m: m.name):
-        if not model.enabled or not model.fallbacks:
+    for source, targets in fallback_map(router_settings).items():
+        api_source = canonical.get(source, source)
+        if api_source not in enabled_names:
             continue
-        targets = [t for t in model.fallbacks if t in enabled_names]
-        skipped = [t for t in model.fallbacks if t not in enabled_names]
+        normalized = [canonical.get(t, t) for t in targets]
+        kept = [t for t in normalized if t in enabled_names and t != api_source]
+        skipped = [t for t in normalized if t not in enabled_names]
         if skipped:
             print(
-                f"  ! {model.name}: резерв {', '.join(skipped)} выключен и пропущен в LiteLLM",
+                f"  ! router.yaml: {source}: резерв {', '.join(skipped)} выключен и пропущен",
                 file=sys.stderr,
             )
-        if targets:
-            chains.append({model.served_name: targets})
+        if kept:
+            chains.append({api_source: kept})
     if chains:
         router["fallbacks"] = chains
 
@@ -566,7 +610,8 @@ def render_litellm(
 # --------------------------------------------------------------------------- #
 
 
-def render_catalog(models: list[Model]) -> str:
+def render_catalog(models: list[Model], fallbacks: dict[str, list[str]] | None = None) -> str:
+    fallbacks = fallbacks or {}
     items = []
     for model in sorted(models, key=lambda m: m.name):
         items.append(
@@ -582,7 +627,7 @@ def render_catalog(models: list[Model]) -> str:
                 "context_length": model.context_length,
                 "max_output_tokens": model.max_output_tokens,
                 "tags": model.tags,
-                "fallbacks": model.fallbacks,
+                "fallbacks": fallbacks.get(model.served_name, []),
                 "pricing": {
                     "input_per_1m_usd": model.pricing_input,
                     "output_per_1m_usd": model.pricing_output,
@@ -603,6 +648,7 @@ def cmd_list(_: argparse.Namespace) -> int:
     if not models:
         print("Реестр пуст: создайте models/<имя>/model.yaml")
         return 0
+    chains = fallback_map(load_router_config())
     fmt = "{:<18} {:<16} {:<9} {:<6} {:<8} {:<24} {}"
     print(fmt.format("ИМЯ", "ТИП", "ВКЛ", "TP", "GPU", "СЕРВИС/URL", "РЕЗЕРВ"))
     print("-" * 108)
@@ -622,16 +668,16 @@ def cmd_list(_: argparse.Namespace) -> int:
                 tp,
                 gpus,
                 where[:24],
-                ", ".join(m.fallbacks) or "—",
+                ", ".join(chains.get(m.served_name) or chains.get(m.name) or []) or "—",
             )
         )
     return 0
 
 
 def cmd_validate(_: argparse.Namespace) -> int:
-    settings = load_registry_settings()
+    router = load_router_config()
     models = load_registry()
-    errors, warnings = validate(models, settings["router"])
+    errors, warnings = validate(models, router)
     for w in warnings:
         print(f"ПРЕДУПРЕЖДЕНИЕ: {w}")
     for e in errors:
@@ -645,8 +691,9 @@ def cmd_validate(_: argparse.Namespace) -> int:
 
 def _render_all() -> dict[Path, str]:
     settings = load_registry_settings()
+    router = load_router_config()
     models = load_registry()
-    errors, warnings = validate(models, settings["router"])
+    errors, warnings = validate(models, router)
     for w in warnings:
         print(f"ПРЕДУПРЕЖДЕНИЕ: {w}")
     if errors:
@@ -658,9 +705,9 @@ def _render_all() -> dict[Path, str]:
             raise RegistryError(f"{LITELLM_SETTINGS}: ожидался YAML-объект")
         static = doc
     return {
-        COMPOSE_OUT: render_compose(models, settings["defaults"]),
-        LITELLM_OUT: render_litellm(models, settings["router"], static),
-        CATALOG_OUT: render_catalog(models),
+        COMPOSE_OUT: render_compose(models, settings),
+        LITELLM_OUT: render_litellm(models, router, static),
+        CATALOG_OUT: render_catalog(models, fallback_map(router)),
     }
 
 
@@ -708,7 +755,7 @@ spec:
   context_length: {context}
   max_output_tokens: 8192
   capabilities: [chat]
-  fallbacks: []
+  # Резервные каналы задаются в config/router.yaml, а не здесь.
   pricing:
     input_per_1m_usd: 0
     output_per_1m_usd: 0
@@ -761,7 +808,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     settings = load_registry_settings()
     models = load_registry()
     print(f"Реестр: {len(models)} моделей, включено {sum(1 for m in models if m.enabled)}")
-    print(f"Образ SGLang по умолчанию: {settings['defaults'].get('image')}")
+    print(f"Образ SGLang по умолчанию: {settings.get('image')}")
 
     env_file = ROOT / ".env"
     if env_file.exists():
