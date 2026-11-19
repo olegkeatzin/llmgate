@@ -1,0 +1,129 @@
+name: llmgate
+
+# Базовый стек: PostgreSQL, LiteLLM Proxy, портал выдачи ключей.
+# Модели SGLang описаны в docker-compose.models.yml (генерируется
+# из models/*/model.yaml командой "make models").
+#
+# Запуск:  make up
+# Только ядро (без моделей):  make up-core
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: llmgate-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging: *default-logging
+
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}
+    container_name: llmgate-litellm
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Соль хеширования ключей. Менять после первого запуска нельзя —
+      # иначе все выпущенные ключи перестанут проверяться.
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      STORE_MODEL_IN_DB: "True"
+      UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
+      UI_PASSWORD: ${LITELLM_UI_PASSWORD}
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
+      SGLANG_API_KEY: ${SGLANG_API_KEY}
+      REMOTE_LLM_API_KEY: ${REMOTE_LLM_API_KEY:-}
+    volumes:
+      - ./config:/app/config:ro
+    command: ["--config", "/app/config/litellm.generated.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    ports:
+      # Порт 4000 — публичный API для приложений и админ-UI LiteLLM (/ui).
+      # В проде закройте его файрволом и пускайте только через reverse proxy с TLS.
+      - "${LITELLM_PORT:-4000}:4000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5)"
+          || python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5)"
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    logging: *default-logging
+
+  portal:
+    build:
+      context: ./portal
+    container_name: llmgate-portal
+    restart: unless-stopped
+    depends_on:
+      litellm:
+        condition: service_started
+    environment:
+      TZ: ${TZ:-Europe/Moscow}
+      PORTAL_ENV: ${PORTAL_ENV:-production}
+      PORTAL_SESSION_KEY: ${PORTAL_SESSION_KEY}
+      PORTAL_SESSION_TTL_HOURS: ${PORTAL_SESSION_TTL_HOURS:-8}
+      PORTAL_COOKIE_SECURE: ${PORTAL_COOKIE_SECURE:-false}
+      PORTAL_TRUSTED_PROXIES: ${PORTAL_TRUSTED_PROXIES:-}
+      PORTAL_POLICY_PATH: /app/config/access.yaml
+      PORTAL_CATALOG_PATH: /app/config/models.generated.json
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_TIMEOUT: "20"
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+      LDAP_URI: ${LDAP_URI:-}
+      LDAP_START_TLS: ${LDAP_START_TLS:-false}
+      LDAP_TLS_VERIFY: ${LDAP_TLS_VERIFY:-true}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_USER_BASE: ${LDAP_USER_BASE:-}
+      LDAP_USER_FILTER: ${LDAP_USER_FILTER:-}
+      LDAP_DISPLAY_NAME_ATTR: ${LDAP_DISPLAY_NAME_ATTR:-displayName}
+      LDAP_EMAIL_ATTR: ${LDAP_EMAIL_ATTR:-mail}
+      LDAP_GROUP_ATTR: ${LDAP_GROUP_ATTR:-memberOf}
+      LDAP_GROUP_BASE: ${LDAP_GROUP_BASE:-}
+      LDAP_GROUP_FILTER: ${LDAP_GROUP_FILTER:-}
+      LDAP_NESTED_GROUPS: ${LDAP_NESTED_GROUPS:-false}
+      LDAP_TIMEOUT: ${LDAP_TIMEOUT:-8}
+      PORTAL_LOGIN_MAX_ATTEMPTS: ${PORTAL_LOGIN_MAX_ATTEMPTS:-5}
+      PORTAL_LOGIN_WINDOW_MINUTES: ${PORTAL_LOGIN_WINDOW_MINUTES:-10}
+      PORTAL_LOGIN_LOCKOUT_MINUTES: ${PORTAL_LOGIN_LOCKOUT_MINUTES:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./config:/app/config:ro
+    ports:
+      - "${PORTAL_PORT:-8080}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging

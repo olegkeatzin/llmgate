@@ -1,0 +1,2 @@
+# Все текстовые файлы — LF, иначе Makefile и shell-скрипты сломаются на Linux.
+* text=auto eol=lf
