@@ -55,10 +55,19 @@ sudo systemctl restart docker
 |---|---|---|
 | 13.x | 580+ | `lmsysorg/sglang:v0.5.23-cu130` (по умолчанию) |
 | 12.9 | 575–579 | `lmsysorg/sglang:v0.5.19-cu129` |
+| 12.0–12.8 | 525–574 | `v0.5.19-cu129` — попробовать (minor compatibility); гарантированно `v0.4.7.post1-cu124` |
+
+CUDA 13 — мажорный скачок: на драйвере 12.4 образ `cu130` не запустится вообще
+(`CUDA driver version is insufficient`). Внутри CUDA 12.x действует minor version
+compatibility, но новые библиотеки могут требовать свежий драйвер, поэтому `cu129`
+на 12.4 — «скорее заработает», а `cu124` — гарантия (это сборка середины 2025 года).
+
+Обновление драйвера до 580 не ломает приложения под CUDA 12.x и не требует
+установки CUDA Toolkit на хост: рантайм лежит в контейнере.
 
 Образ задаётся один раз в `.env` (`SGLANG_IMAGE`) или отдельно в
-`models/<имя>/model.yaml` → `spec.sglang.image`. Проще обновить драйвер: A100
-нормально работает с 580+, а свежие SGLang собираются под CUDA 13.
+`models/<имя>/model.yaml` → `spec.sglang.image`. Проверить совпадение:
+`python3 tools/llmgate.py doctor`.
 
 ---
 

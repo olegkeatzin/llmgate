@@ -336,6 +336,7 @@ spec:
 
 | Симптом | Что менять |
 |---|---|
+| `CUDA driver version is insufficient` | образ собран под более новую CUDA | обновить драйвер или взять `v0.4.7.post1-cu124` |
 | `CUDA out of memory` при старте | уменьшить `mem_fraction_static` (0.85 → 0.80), `context_length` |
 | Модель грузится, но падает на длинных запросах | уменьшить `context_length` или `max_running_requests` |
 | Мало параллельных запросов | `mem_fraction_static` вверх (осторожно: сожмёт запас под пики) |

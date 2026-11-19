@@ -145,6 +145,13 @@ def test_minimal_model_file_works() -> None:
         target.parent.rmdir()
 
 
+def test_image_cuda_version_parsing() -> None:
+    assert llmgate.image_cuda_version("lmsysorg/sglang:v0.5.23-cu130") == (13, 0)
+    assert llmgate.image_cuda_version("lmsysorg/sglang:v0.5.19-cu129") == (12, 9)
+    assert llmgate.image_cuda_version("lmsysorg/sglang:v0.4.7.post1-cu124") == (12, 4)
+    assert llmgate.image_cuda_version("lmsysorg/sglang:latest") is None
+
+
 def test_catalog_from_examples() -> None:
     payload = json.loads(llmgate.render_catalog(example_models(), {}))
     assert payload["schema"] == 1

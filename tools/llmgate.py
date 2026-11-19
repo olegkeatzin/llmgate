@@ -123,6 +123,32 @@ def _as_int(value: Any, default: int) -> int:
         raise RegistryError(f"ожидалось целое число, получено {value!r}") from exc
 
 
+CUDA_TAG_RE = re.compile(r"cu(\d{2,3})(?!\d)")
+
+
+def image_cuda_version(image: str) -> tuple[int, int] | None:
+    """CUDA из тега образа: lmsysorg/sglang:v0.5.23-cu130 -> (13, 0)."""
+    match = CUDA_TAG_RE.search(image or "")
+    if match is None:
+        return None
+    raw = match.group(1)
+    if len(raw) == 3:
+        return int(raw[:2]), int(raw[2])
+    return int(raw[0]), int(raw[1])
+
+
+def driver_cuda_version() -> tuple[int, int] | None:
+    """Максимальная CUDA драйвера из шапки nvidia-smi."""
+    try:
+        result = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", result.stdout or "")
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 def load_model_file(path: Path) -> Model:
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -861,12 +887,38 @@ def cmd_doctor(_: argparse.Namespace) -> int:
             print(f"  требуется GPU-слотов: {needed}, доступно: {count}")
             if needed > count:
                 print("  ПРЕДУПРЕЖДЕНИЕ: включённые модели не помещаются в доступные GPU")
+
+            driver = driver_cuda_version()
+            if driver is not None:
+                print(f"  драйвер поддерживает CUDA {driver[0]}.{driver[1]}")
+                images = {
+                    str(m.sglang.get("image") or settings.get("image"))
+                    for m in models
+                    if m.enabled and m.kind == "SGLangModel"
+                } or {str(settings.get("image"))}
+                for image in sorted(images):
+                    required = image_cuda_version(image)
+                    if required is None:
+                        continue
+                    if required[0] > driver[0]:
+                        print(
+                            f"  ПРЕДУПРЕЖДЕНИЕ: {image} требует CUDA {required[0]}.{required[1]}, "
+                            f"драйвер — {driver[0]}.{driver[1]}"
+                        )
+                        print("  Обновите драйвер до 580+ (для A100 это штатно) или возьмите образ под вашу CUDA.")
+                        ok = False
+                    elif required > driver:
+                        print(
+                            f"  ВНИМАНИЕ: образ {image} собран под CUDA {required[0]}.{required[1]}, "
+                            f"драйвер — {driver[0]}.{driver[1]}"
+                        )
+                        print("  Может пойти по minor version compatibility; при ошибке CUDA — образ cu124 или новый драйвер.")
         except Exception as exc:  # noqa: BLE001
             print(f"  ПРЕДУПРЕЖДЕНИЕ: nvidia-smi не ответил: {exc}")
     else:
         print("ВНИМАНИЕ: nvidia-smi не найден (это нормально вне GPU-хоста)")
 
-    cache = Path(settings["defaults"].get("hf_cache_dir") or "./data/hf-cache")
+    cache = Path(str(settings.get("hf_cache_dir") or "./data/hf-cache"))
     print(f"Кэш весов: {cache} — {'есть' if cache.exists() else 'будет создан'}")
 
     return 0 if ok else 1
